@@ -1,19 +1,23 @@
 import streamlit as st
-import numpy as np
-import json
+import random
+import math
 
-# Page config
 st.set_page_config(layout="wide")
-st.title("AI Tools Technology Radar (SVG)")
+st.title("AI Tools Technology Radar (Pure HTML + SVG)")
+st.caption("No Plotly, No Matplotlib — Fully rendered using HTML, CSS, and SVG.")
 
-# --- Configuration ---
+# -------------------------------------------------------
+# Data
+# -------------------------------------------------------
 quadrant_labels = ["GenAI", "Dev tool", "Platforms", "Tools"]
+
 status_rings = {
-    "Approved": {"radius": 2, "color": "#4CAF50"},
-    "Testing": {"radius": 3, "color": "#FFC107"},
-    "Innovation": {"radius": 4, "color": "#2196F3"},
-    "Not Approved": {"radius": 5, "color": "#FF0000"},
+    "Approved": {"radius": 120, "color": "rgba(76,175,80,0.25)"},
+    "Testing": {"radius": 180, "color": "rgba(255,193,7,0.25)"},
+    "Innovation": {"radius": 240, "color": "rgba(33,150,243,0.25)"},
+    "Not Approved": {"radius": 300, "color": "rgba(255,0,0,0.25)"},
 }
+
 ai_tools = {
     "ChatGPT-4": ("GenAI", "Approved"),
     "Copilot": ("Dev tool", "Approved"),
@@ -27,82 +31,107 @@ ai_tools = {
     "Jira": ("Tools", "Testing"),
 }
 
-# Precompute ring boundaries
+# -------------------------------------------------------
+# Compute ring boundaries
+# -------------------------------------------------------
 status_order = list(status_rings.keys())
-status_radius_map = {s: status_rings[s]["radius"] for s in status_order}
-status_inner_map = {}
-prev = 0.0
+inner_radius_map = {}
+prev = 0
+
 for s in status_order:
-    status_inner_map[s] = prev
-    prev = status_radius_map[s]
+    inner_radius_map[s] = prev
+    prev = status_rings[s]["radius"]
 
-# Compute tool positions
-np.random.seed(42)
-tool_positions = []
-max_radius = max(status_radius_map.values())
-for tool, (quadrant, status) in ai_tools.items():
-    q_idx = quadrant_labels.index(quadrant)
-    # angle
-    angle_min = q_idx * 90
-    angle_max = (q_idx + 1) * 90
-    angle_deg = np.random.uniform(angle_min + 5, angle_max - 5)
-    angle_rad = np.deg2rad(angle_deg)
-    # radius
-    r_inner = status_inner_map[status]
-    r_outer = status_radius_map[status]
-    r = np.random.uniform(r_inner + 0.25, r_outer - 0.25)
-    x = r * np.cos(angle_rad)
-    y = r * np.sin(angle_rad)
-    tool_positions.append({
-        "name": tool,
-        "quadrant": quadrant,
-        "status": status,
-        "x": x,
-        "y": y
-    })
+# Center of SVG radar
+CX, CY = 350, 350
 
-# Convert to JSON for JS / HTML
-tool_json = json.dumps(tool_positions)
-ring_json = json.dumps([
-    {"status": s, "radius": status_rings[s]["radius"], "color": status_rings[s]["color"]}
-    for s in status_order
-])
-quadrant_json = json.dumps([
-    {"label": quadrant_labels[i], "angle_start": i * 90, "angle_end": (i+1)*90}
-    for i in range(len(quadrant_labels))
-])
+# SVG WIDTH / HEIGHT
+W, H = 700, 700
 
-# --- Build SVG HTML ---
-html = f"""
-<div>
-  <svg width="600" height="600" viewBox="-6 -6 12 12" xmlns="http://www.w3.org/2000/svg">
-    <!-- Draw rings -->
-    {''.join([
-      f'<circle cx="0" cy="0" r="{status_rings[s]["radius"]}" fill="none" stroke="{status_rings[s]["color"]}" stroke-width="0.05"/>' 
-      for s in status_order
-    ])}
-    <!-- Quadrant lines -->
-    <line x1="-{max_radius}" y1="0" x2="{max_radius}" y2="0" stroke="black" stroke-width="0.03"/>
-    <line x1="0" y1="-{max_radius}" x2="0" y2="{max_radius}" stroke="black" stroke-width="0.03"/>
-    <!-- Quadrant labels -->
-    {''.join([
-      f'<text x="{(max_radius+0.5)*np.cos(np.deg2rad((i*90 + (i+1)*90)/2))}" y="{(max_radius+0.5)*np.sin(np.deg2rad((i*90 + (i+1)*90)/2))}" ' +
-      'font-size="0.6" font-weight="bold" text-anchor="middle" alignment-baseline="middle">{quadrant_labels[i]}</text>'
-      for i in range(4)
-    ])}
-    <!-- Tools -->
-    {''.join([
-      f'<text x="{p["x"]:.3f}" y="{p["y"]:.3f}" font-size="0.4" text-anchor="middle" alignment-baseline="middle" ' +
-      'style="fill:black; background: white;">{p["name"]}</text>'
-      for p in tool_positions
-    ])}
-  </svg>
-</div>
+# -------------------------------------------------------
+# Build SVG dynamically
+# -------------------------------------------------------
+svg = f"""
+<svg width="{W}" height="{H}" style="font-family:Arial;">
+    <!-- Background -->
+    <rect width="100%" height="100%" fill="white"></rect>
 """
 
-# Embed the SVG in the app
-import streamlit.components.v1 as components
-components.html(html, height=620, width=620)
+# -------------------------------------------------------
+# Draw Rings
+# -------------------------------------------------------
+for status, props in status_rings.items():
+    outer = props["radius"]
+    inner = inner_radius_map[status]
 
-st.write("Status Rings: ", status_rings)
-st.write("Tool Positions:", tool_positions)
+    svg += f"""
+    <circle cx="{CX}" cy="{CY}" r="{outer}" 
+            fill="{props['color']}" 
+            stroke="black" stroke-width="1"></circle>
+
+    <!-- Status Label -->
+    <text x="{CX}" y="{CY - (inner + outer) / 2}" 
+          text-anchor="middle" font-weight="bold" font-size="14">
+        {status}
+    </text>
+    """
+
+# -------------------------------------------------------
+# Draw quadrant crosshairs
+# -------------------------------------------------------
+svg += f"""
+<line x1="0" y1="{CY}" x2="{W}" y2="{CY}" stroke="black" stroke-width="2"/>
+<line x1="{CX}" y1="0" x2="{CX}" y2="{H}" stroke="black" stroke-width="2"/>
+"""
+
+# -------------------------------------------------------
+# Quadrant Labels
+# -------------------------------------------------------
+offset = 330
+quad_positions = [
+    (CX + offset, CY - offset),
+    (CX - offset, CY - offset),
+    (CX - offset, CY + offset),
+    (CX + offset, CY + offset),
+]
+
+for label, (x, y) in zip(quadrant_labels, quad_positions):
+    svg += f"""
+    <text x="{x}" y="{y}" text-anchor="middle" font-size="18" font-weight="bold">{label}</text>
+    """
+
+# -------------------------------------------------------
+# Place Tools
+# -------------------------------------------------------
+random.seed(42)
+
+for tool, (quadrant, status) in ai_tools.items():
+    q_index = quadrant_labels.index(quadrant)
+
+    angle_min = q_index * 90 + 10
+    angle_max = (q_index + 1) * 90 - 10
+    angle_deg = random.uniform(angle_min, angle_max)
+    angle_rad = math.radians(angle_deg)
+
+    inner_r = inner_radius_map[status]
+    outer_r = status_rings[status]["radius"]
+    r = random.uniform(inner_r + 20, outer_r - 20)
+
+    x = CX + r * math.cos(angle_rad)
+    y = CY - r * math.sin(angle_rad)
+
+    svg += f"""
+    <text x="{x}" y="{y}" text-anchor="middle"
+          font-size="12"
+          style="background:white; paint-order:stroke; stroke:black; stroke-width:0.5;">
+        {tool}
+    </text>
+    """
+
+# Close SVG
+svg += "</svg>"
+
+# -------------------------------------------------------
+# Render in Streamlit
+# -------------------------------------------------------
+st.components.v1.html(svg, height=750, width=750, scrolling=False)
