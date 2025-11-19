@@ -1,23 +1,19 @@
 import streamlit as st
-import plotly.graph_objects as go
 import numpy as np
+import json
 
+# Page config
 st.set_page_config(layout="wide")
-st.title("AI Tools Technology Radar (Plotly Interactive)")
+st.title("AI Tools Technology Radar (SVG)")
 
-
-# ----------------------------------
-# Configuration
-# ----------------------------------
+# --- Configuration ---
 quadrant_labels = ["GenAI", "Dev tool", "Platforms", "Tools"]
-
 status_rings = {
-    "Approved": {"radius": 2, "color": "rgba(76, 175, 80, 0.25)"},
-    "Testing": {"radius": 3, "color": "rgba(255, 193, 7, 0.25)"},
-    "Innovation": {"radius": 4, "color": "rgba(33, 150, 243, 0.25)"},
-    "Not Approved": {"radius": 5, "color": "rgba(255, 0, 0, 0.25)"},
+    "Approved": {"radius": 2, "color": "#4CAF50"},
+    "Testing": {"radius": 3, "color": "#FFC107"},
+    "Innovation": {"radius": 4, "color": "#2196F3"},
+    "Not Approved": {"radius": 5, "color": "#FF0000"},
 }
-
 ai_tools = {
     "ChatGPT-4": ("GenAI", "Approved"),
     "Copilot": ("Dev tool", "Approved"),
@@ -31,137 +27,82 @@ ai_tools = {
     "Jira": ("Tools", "Testing"),
 }
 
-
-# ----------------------------------
 # Precompute ring boundaries
-# ----------------------------------
 status_order = list(status_rings.keys())
 status_radius_map = {s: status_rings[s]["radius"] for s in status_order}
-
-# compute inner radius per ring
 status_inner_map = {}
-prev = 0
+prev = 0.0
 for s in status_order:
     status_inner_map[s] = prev
     prev = status_radius_map[s]
 
-
-# ----------------------------------
-# Create Radar Figure
-# ----------------------------------
-fig = go.Figure()
-
-# ----- Draw rings (background layers) -----
-for status, props in status_rings.items():
-    outer = props["radius"]
-    inner = status_inner_map[status]
-
-    # Create circular annulus by drawing 100 points around
-    theta = np.linspace(0, 2 * np.pi, 200)
-
-    # Outer circle
-    x_outer = outer * np.cos(theta)
-    y_outer = outer * np.sin(theta)
-
-    # Inner circle (reversed)
-    x_inner = inner * np.cos(theta)[::-1]
-    y_inner = inner * np.sin(theta)[::-1]
-
-    # Add filled annulus shape
-    fig.add_trace(go.Scatter(
-        x=np.concatenate([x_outer, x_inner]),
-        y=np.concatenate([y_outer, y_inner]),
-        fill="toself",
-        fillcolor=props["color"],
-        line=dict(color="black", width=1),
-        name=status,
-        hoverinfo="skip"
-    ))
-
-    # Add status text (mid radius)
-    mid_r = (inner + outer) / 2
-    fig.add_trace(go.Scatter(
-        x=[0], y=[mid_r],
-        text=[status],
-        mode="text",
-        textfont=dict(size=14, color="black"),
-        hoverinfo="skip",
-        showlegend=False
-    ))
-
-
-# ----- Draw Quadrant Lines -----
-max_r = max(status_radius_map.values())
-
-fig.add_shape(type="line", x0=-max_r, y0=0, x1=max_r, y1=0, line=dict(color="black", width=2))
-fig.add_shape(type="line", x0=0, y0=-max_r, x1=0, y1=max_r, line=dict(color="black", width=2))
-
-
-# ----- Add Quadrant Labels -----
-offset = max_r * 0.82
-
-quadrant_positions = [
-    (offset, offset),
-    (-offset, offset),
-    (-offset, -offset),
-    (offset, -offset),
-]
-
-for label, (x, y) in zip(quadrant_labels, quadrant_positions):
-    fig.add_trace(go.Scatter(
-        x=[x], y=[y],
-        text=[label],
-        mode="text",
-        textfont=dict(size=16, color="black", family="Arial Black"),
-        hoverinfo="skip",
-        showlegend=False
-    ))
-
-
-# ----- Add Tools (placed randomly) -----
+# Compute tool positions
 np.random.seed(42)
-
+tool_positions = []
+max_radius = max(status_radius_map.values())
 for tool, (quadrant, status) in ai_tools.items():
-    q_index = quadrant_labels.index(quadrant)
-
-    # Quadrant angle range
-    angle_min = q_index * 90
-    angle_max = (q_index + 1) * 90
-    angle = np.deg2rad(np.random.uniform(angle_min + 8, angle_max - 8))
-
-    # Radial bounds
+    q_idx = quadrant_labels.index(quadrant)
+    # angle
+    angle_min = q_idx * 90
+    angle_max = (q_idx + 1) * 90
+    angle_deg = np.random.uniform(angle_min + 5, angle_max - 5)
+    angle_rad = np.deg2rad(angle_deg)
+    # radius
     r_inner = status_inner_map[status]
     r_outer = status_radius_map[status]
     r = np.random.uniform(r_inner + 0.25, r_outer - 0.25)
+    x = r * np.cos(angle_rad)
+    y = r * np.sin(angle_rad)
+    tool_positions.append({
+        "name": tool,
+        "quadrant": quadrant,
+        "status": status,
+        "x": x,
+        "y": y
+    })
 
-    x = r * np.cos(angle)
-    y = r * np.sin(angle)
+# Convert to JSON for JS / HTML
+tool_json = json.dumps(tool_positions)
+ring_json = json.dumps([
+    {"status": s, "radius": status_rings[s]["radius"], "color": status_rings[s]["color"]}
+    for s in status_order
+])
+quadrant_json = json.dumps([
+    {"label": quadrant_labels[i], "angle_start": i * 90, "angle_end": (i+1)*90}
+    for i in range(len(quadrant_labels))
+])
 
-    fig.add_trace(go.Scatter(
-        x=[x], y=[y],
-        text=[tool],
-        mode="text",
-        textposition="middle center",
-        textfont=dict(size=12),
-        showlegend=False,
-        hovertemplate=f"<b>{tool}</b><br>Status: {status}<br>Category: {quadrant}<extra></extra>"
-    ))
+# --- Build SVG HTML ---
+html = f"""
+<div>
+  <svg width="600" height="600" viewBox="-6 -6 12 12" xmlns="http://www.w3.org/2000/svg">
+    <!-- Draw rings -->
+    {''.join([
+      f'<circle cx="0" cy="0" r="{status_rings[s]["radius"]}" fill="none" stroke="{status_rings[s]["color"]}" stroke-width="0.05"/>' 
+      for s in status_order
+    ])}
+    <!-- Quadrant lines -->
+    <line x1="-{max_radius}" y1="0" x2="{max_radius}" y2="0" stroke="black" stroke-width="0.03"/>
+    <line x1="0" y1="-{max_radius}" x2="0" y2="{max_radius}" stroke="black" stroke-width="0.03"/>
+    <!-- Quadrant labels -->
+    {''.join([
+      f'<text x="{(max_radius+0.5)*np.cos(np.deg2rad((i*90 + (i+1)*90)/2))}" y="{(max_radius+0.5)*np.sin(np.deg2rad((i*90 + (i+1)*90)/2))}" ' +
+      'font-size="0.6" font-weight="bold" text-anchor="middle" alignment-baseline="middle">{quadrant_labels[i]}</text>'
+      for i in range(4)
+    ])}
+    <!-- Tools -->
+    {''.join([
+      f'<text x="{p["x"]:.3f}" y="{p["y"]:.3f}" font-size="0.4" text-anchor="middle" alignment-baseline="middle" ' +
+      'style="fill:black; background: white;">{p["name"]}</text>'
+      for p in tool_positions
+    ])}
+  </svg>
+</div>
+"""
 
+# Embed the SVG in the app
+import streamlit.components.v1 as components
+components.html(html, height=620, width=620)
 
-# ----------------------------------
-# Final Layout
-# ----------------------------------
-fig.update_layout(
-    width=900,
-    height=900,
-    title="AI Tools Technology Radar",
-    xaxis=dict(visible=False),
-    yaxis=dict(visible=False),
-    showlegend=False,
-    plot_bgcolor="white",
-)
-
-fig.update_xaxes(range=[-max_r - 1, max_r + 1])
-fig.update_yaxes(range=[-max_r - 1, max_r + 1])
-
-st.plotly_chart(fig, use_container_width=True)
+st.write("Status Rings: ", status_rings)
+st.write("Tool Positions:", tool_positions)
